@@ -1,0 +1,31 @@
+# Node
+node_modules/
+dist/
+npm-debug.log
+yarn-error.log
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.env
+
+# Haskell
+dist-newstyle/
+*.o
+*.hi
+*.dyn_o
+*.dyn_hi
+
+# Lean
+lake-packages/
+build/
+
+# IDE / Editors
+.vscode/
+.idea/
+*.swp
+
+# Nix
+.direnv/
+result
