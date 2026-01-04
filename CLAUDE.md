@@ -153,31 +153,61 @@ Features:
 - Support for llama3.2 model (3B parameters)
 - Environment-based Ollama host configuration
 
-### v0.2.0 - High-Performance Verified Orchestrator (Planned)
+### v0.2.0 - vLLM Communication Channel (Planned)
 
-**Target Environment:** 16 GB VRAM with formal verification
+**Focus:** Replace HTTP/curl with high-performance Unix Domain Sockets
 
-Key architectural changes:
-- **Model Upgrade:** Move from llama3.2 (3B) to GPT-OSS 20B (Q4) or Qwen3 14B
-  - Advanced reasoning and tool-calling capabilities
+**Scope:**
+- **Inference Engine:** Replace Ollama with **vLLM**
+  - PagedAttention for efficient memory management
+  - OpenAI-compatible API
+  - Support for larger models (20B parameters)
   - 32k+ context window support
 
-- **Inference Engine:** Replace Ollama with **vLLM**
-  - Native MCP (Model Context Protocol) support
-  - PagedAttention for efficient memory management
-  - Optimized for long-context windows in constrained VRAM
-
-- **Communication Layer:** Replace HTTP/curl with **Unix Domain Sockets (UDS)**
+- **Communication Layer:** Unix Domain Sockets (UDS) implementation
+  - C shim for POSIX socket operations (`socket.h` wrapper)
+  - Lean 4 FFI bindings for type-safe socket API
+  - JSON-RPC protocol layer over UDS
   - Security: POSIX filesystem permissions, no network exposure
-  - Performance: Lower latency, higher throughput than TCP
-  - Implementation: Lean 4 FFI with C shim for socket operations
+  - Performance: < 50μs latency vs ~100-200μs for HTTP
 
-- **Formal Verification:** Verified State Machine for agent decision-making
-  - Type-safe tool calls modeled as Kleisli Category or inductive state machine
-  - JSON parser that maps LLM outputs to formal Lean types
-  - Compile-time guarantees for orchestrator logic
+- **Environment Setup:** vLLM integration in Nix development shell
+  - Automated vLLM setup similar to current `start-ollama`
+  - CUDA acceleration support
+  - VRAM-optimized configuration
 
-**VRAM Strategy:**
+**Target Environment:** 16 GB VRAM
 - Model: ~11-13 GB (Q4 quantization)
 - KV Cache: ~3-5 GB (supporting 32k+ tokens)
-- vLLM configuration optimized for 4-bit quantization and memory utilization flags
+
+**Out of Scope:** Tool calling, MCP, formal verification (deferred to later versions)
+
+### v0.3.0 - Tool Calling System (Future)
+
+**Focus:** Type-safe tool execution framework
+
+Planned features:
+- Formal verification of tool schemas using dependent types
+- Verified state machine for agent orchestration
+- Tool registry with compile-time validation
+- JSON parser with schema conformance proofs
+- Kleisli category for composable tool actions
+
+### v0.4.0 - Model Context Protocol (Future)
+
+**Focus:** MCP integration for standardized tool interfaces
+
+Planned features:
+- MCP server/client implementation
+- Native vLLM MCP support
+- Standard tool protocols
+- Multi-tool orchestration
+
+### v0.5.0 - Web Search Integration (Future)
+
+**Focus:** External information retrieval
+
+Planned features:
+- Web search tool implementation
+- Search result parsing and ranking
+- Integration with agent reasoning loop
