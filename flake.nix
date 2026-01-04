@@ -31,17 +31,14 @@
             # Python ecosystem
             uv
 
-            # Functional Programming
-            ghc
-            cabal-install
-            haskell-language-server
-
-            # Lean 4
-            lean4
+            # Lean ecosystem
+            elan
 
             # Utilities
             git
-            ollama
+
+            # Ollama for local AI model hosting
+            (ollama.override { acceleration = "cuda"; })
           ];
 
           shellHook = ''
@@ -49,8 +46,47 @@
             echo "Node: $(node --version)"
             echo "TypeScript: $(tsc --version)"
             echo "UV: $(uv --version)"
-            echo "GHC: $(ghc --version)"
-            echo "Lean: $(lean4 --version)"
+            echo "Lean: $(lean --version)"
+
+            # Ollama Configuration
+            export OLLAMA_MODELS="$PWD/.ollama/models"
+            export OLLAMA_HOST="127.0.0.1:11434"
+
+            # Ensure Ollama can find its libraries on WSL
+            export LD_LIBRARY_PATH="/usr/lib/wsl/lib:$LD_LIBRARY_PATH"
+
+            # Helper function to start Ollama and pull models
+            start-ollama() {
+              echo "Setting up Ollama..."
+              mkdir -p "$OLLAMA_MODELS"
+              
+              if ! pgrep -x "ollama" > /dev/null; then
+                echo "Starting Ollama server..."
+                ollama serve > .ollama/server.log 2>&1 &
+                OLLAMA_PID=$!
+                echo "Ollama server started with PID $OLLAMA_PID"
+              else
+                echo "Ollama server is already running."
+              fi
+
+              echo "Waiting for Ollama to be ready..."
+              while ! curl -s http://$OLLAMA_HOST/api/tags > /dev/null; do
+                sleep 1
+              done
+              echo "Ollama is ready!"
+
+              if ! ollama list | grep -q "llama3.2"; then
+                echo "Pulling llama3.2 model..."
+                ollama pull llama3.2
+              else
+                echo "Model llama3.2 is already available."
+              fi
+              
+              echo "Ollama setup complete. Server running at http://$OLLAMA_HOST"
+            }
+
+            echo ""
+            echo "Run 'start-ollama' to initialize the AI backend."
           '';
         };
       }

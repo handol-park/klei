@@ -21,10 +21,15 @@ def generate (prompt : String) (model : String := "llama3.2") : IO String := do
   let json := toJson req
   let jsonStr := json.compress
 
+  -- Get Ollama host from environment or default
+  let host <- IO.getEnv "OLLAMA_HOST"
+  let host := host.getD "127.0.0.1:11434"
+  let url := s!"http://{host}/api/generate"
+
   -- Using curl to POST to Ollama
   let outStr <- IO.Process.run {
     cmd := "curl"
-    args := #["-s", "-X", "POST", "http://localhost:11434/api/generate", "-d", jsonStr]
+    args := #["-s", "-X", "POST", url, "-d", jsonStr]
   }
 
   match Json.parse outStr with
