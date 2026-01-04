@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Klei is a distributed agent backend system that provides a CLI-based conversation interface powered by local LLMs via Ollama. The architecture has evolved to use **Lean as the primary core** for logic, state management, and LLM communication, with legacy Python/TypeScript components present but not actively used.
 
+**Current Version: 0.1.0** - Simple Conversation Partner (MVP complete)
+
 ### Current Architecture
 
 The system follows a **Lean-only approach** where the Lean core directly communicates with Ollama's REST API:
@@ -138,3 +140,44 @@ The `_planning/` directory contains architecture decisions and requirements:
 - **_planning/2-architecture/01-system-design.md**: Explains the decision to use Lean-only architecture
 - **_planning/1-requirements/01-mvp-conversation.md**: MVP requirements for CLI conversation interface
 - **_planning/0-ideation/01-project-vision.md**: Original project vision
+
+## Version History & Roadmap
+
+### v0.1.0 - Simple Conversation Partner (Current)
+**Status: Complete**
+
+Features:
+- CLI-based REPL interface for chatting with local LLMs
+- Lean 4 core that communicates directly with Ollama via curl/HTTP
+- Simple JSON request/response handling
+- Support for llama3.2 model (3B parameters)
+- Environment-based Ollama host configuration
+
+### v0.2.0 - High-Performance Verified Orchestrator (Planned)
+
+**Target Environment:** 16 GB VRAM with formal verification
+
+Key architectural changes:
+- **Model Upgrade:** Move from llama3.2 (3B) to GPT-OSS 20B (Q4) or Qwen3 14B
+  - Advanced reasoning and tool-calling capabilities
+  - 32k+ context window support
+
+- **Inference Engine:** Replace Ollama with **vLLM**
+  - Native MCP (Model Context Protocol) support
+  - PagedAttention for efficient memory management
+  - Optimized for long-context windows in constrained VRAM
+
+- **Communication Layer:** Replace HTTP/curl with **Unix Domain Sockets (UDS)**
+  - Security: POSIX filesystem permissions, no network exposure
+  - Performance: Lower latency, higher throughput than TCP
+  - Implementation: Lean 4 FFI with C shim for socket operations
+
+- **Formal Verification:** Verified State Machine for agent decision-making
+  - Type-safe tool calls modeled as Kleisli Category or inductive state machine
+  - JSON parser that maps LLM outputs to formal Lean types
+  - Compile-time guarantees for orchestrator logic
+
+**VRAM Strategy:**
+- Model: ~11-13 GB (Q4 quantization)
+- KV Cache: ~3-5 GB (supporting 32k+ tokens)
+- vLLM configuration optimized for 4-bit quantization and memory utilization flags
