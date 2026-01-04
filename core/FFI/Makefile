@@ -1,14 +1,17 @@
 # Makefile for Klei socket FFI library
 
 CC = gcc
-CFLAGS = -Wall -Wextra -Werror -fPIC -O2
+CFLAGS = -Wall -Wextra -Werror -fPIC -O2 -I$(LEAN_INCLUDE)
 LDFLAGS = -shared
+
+# Get Lean include path
+LEAN_INCLUDE ?= $(shell lean --print-prefix)/include
 
 # Library name
 LIB = libklei_socket.so
 
 # Source and object files
-SRC = socket.c
+SRC = socket.c lean_glue.c
 OBJ = $(SRC:.c=.o)
 
 # Test program
@@ -29,8 +32,8 @@ test: $(TEST_BIN)
 	@echo "Run './$(TEST_BIN)' to test the socket library"
 	@echo "Note: Requires a UDS server running at /tmp/test.sock"
 
-$(TEST_BIN): $(TEST_SRC) $(LIB)
-	$(CC) $(CFLAGS) -o $@ $(TEST_SRC) -L. -lklei_socket -Wl,-rpath,.
+$(TEST_BIN): $(TEST_SRC) socket.o
+	$(CC) $(CFLAGS) -o $@ $(TEST_SRC) socket.o
 
 clean:
 	rm -f $(OBJ) $(LIB) $(TEST_BIN)

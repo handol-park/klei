@@ -84,7 +84,7 @@ int run_client_test() {
     printf("Test 1: Connecting to %s... ", TEST_SOCKET_PATH);
     fflush(stdout);
 
-    sock = klei_socket_connect(TEST_SOCKET_PATH);
+    sock = klei_socket_connect_impl(TEST_SOCKET_PATH);
     if (!sock) {
         printf("FAILED\n");
         printf("  Error: Unable to connect\n");
@@ -97,11 +97,11 @@ int run_client_test() {
     fflush(stdout);
 
     strcpy((char*)send_buf, TEST_MESSAGE);
-    result = klei_socket_send(sock, send_buf, strlen(TEST_MESSAGE));
+    result = klei_socket_send_impl(sock, send_buf, strlen(TEST_MESSAGE));
     if (result < 0) {
         printf("FAILED\n");
         printf("  Error code: %ld\n", result);
-        printf("  Error message: %s\n", klei_socket_error(sock));
+        printf("  Error message: %s\n", klei_socket_error_impl(sock));
         errors++;
     } else if ((size_t)result != strlen(TEST_MESSAGE)) {
         printf("FAILED\n");
@@ -115,11 +115,11 @@ int run_client_test() {
     printf("Test 3: Receiving echo... ");
     fflush(stdout);
 
-    result = klei_socket_recv(sock, recv_buf, BUFFER_SIZE, 5000);  // 5 second timeout
+    result = klei_socket_recv_impl(sock, recv_buf, BUFFER_SIZE, 5000);  // 5 second timeout
     if (result < 0) {
         printf("FAILED\n");
         printf("  Error code: %ld\n", result);
-        printf("  Error message: %s\n", klei_socket_error(sock));
+        printf("  Error message: %s\n", klei_socket_error_impl(sock));
         errors++;
     } else {
         recv_buf[result] = '\0';  // Null-terminate
@@ -137,7 +137,7 @@ int run_client_test() {
     printf("Test 4: Closing connection... ");
     fflush(stdout);
 
-    klei_socket_close(sock);
+    klei_socket_close_impl(sock);
     printf("PASSED\n");
 
     // Summary

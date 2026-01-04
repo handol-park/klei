@@ -8,3 +8,9 @@ name = "Klei"
 [[lean_exe]]
 name = "core"
 root = "Main"
+moreLinkArgs = ["-L./FFI", "-lklei_socket", "-Wl,-rpath,./FFI"]
+
+[[lean_exe]]
+name = "test-socket"
+root = "TestSocket"
+moreLinkArgs = ["-L./FFI", "-lklei_socket", "-Wl,-rpath,./FFI"]

@@ -17,7 +17,7 @@ struct klei_socket_t {
 };
 
 // Connect to Unix Domain Socket
-klei_socket_t* klei_socket_connect(const char* path) {
+klei_socket_t* klei_socket_connect_impl(const char* path) {
     if (!path) {
         return NULL;
     }
@@ -59,7 +59,7 @@ klei_socket_t* klei_socket_connect(const char* path) {
 }
 
 // Send data to socket
-int64_t klei_socket_send(klei_socket_t* sock, const uint8_t* data, size_t len) {
+int64_t klei_socket_send_impl(klei_socket_t* sock, const uint8_t* data, size_t len) {
     if (!sock || sock->fd < 0) {
         return KLEI_ERR_INVALID;
     }
@@ -79,7 +79,7 @@ int64_t klei_socket_send(klei_socket_t* sock, const uint8_t* data, size_t len) {
 }
 
 // Receive data from socket
-int64_t klei_socket_recv(
+int64_t klei_socket_recv_impl(
     klei_socket_t* sock,
     uint8_t* buffer,
     size_t bufsize,
@@ -125,7 +125,7 @@ int64_t klei_socket_recv(
 }
 
 // Close socket and free resources
-void klei_socket_close(klei_socket_t* sock) {
+void klei_socket_close_impl(klei_socket_t* sock) {
     if (!sock) {
         return;
     }
@@ -137,9 +137,14 @@ void klei_socket_close(klei_socket_t* sock) {
 }
 
 // Get last error message
-const char* klei_socket_error(klei_socket_t* sock) {
+const char* klei_socket_error_impl(klei_socket_t* sock) {
     if (!sock) {
         return "Invalid socket handle";
     }
     return sock->last_error;
+}
+
+// Check if socket handle is null (helper for Lean FFI)
+int klei_socket_is_null_impl(klei_socket_t* sock) {
+    return sock == NULL ? 1 : 0;
 }
