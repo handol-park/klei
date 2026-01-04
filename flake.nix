@@ -34,6 +34,10 @@
             # Lean ecosystem
             elan
 
+            # C/C++ toolchain for FFI
+            gcc
+            gnumake
+
             # Utilities
             git
 
