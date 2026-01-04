@@ -20,6 +20,15 @@ dist-newstyle/
 # Lean
 lake-packages/
 build/
+.lake/
+
+# C/FFI build artifacts
+*.so
+*.o
+core/FFI/test_socket
+
+# Environment
+.envrc
 
 # IDE / Editors
 .vscode/
