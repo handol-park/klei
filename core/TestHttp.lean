@@ -108,6 +108,34 @@ def testGetContentLength : IO Unit := do
   else
     IO.println s!"  ✗ Expected 512, got {len3}"
 
+def testChunkedHelpers : IO Unit := do
+  IO.println "\nTest: chunked helpers"
+
+  match parseChunkSize "4" with
+  | .ok n =>
+      if n == 4 then
+        IO.println "  ✓ Chunk size hex parsed correctly"
+      else
+        IO.println s!"  ✗ Expected 4, got {n}"
+  | .error e => IO.println s!"  ✗ Failed to parse chunk size: {repr e}"
+
+  match parseChunkSize "A;ext=value" with
+  | .ok n =>
+      if n == 10 then
+        IO.println "  ✓ Chunk size with extensions parsed correctly"
+      else
+        IO.println s!"  ✗ Expected 10, got {n}"
+  | .error e => IO.println s!"  ✗ Failed to parse chunk size with extensions: {repr e}"
+
+  let headers := [
+    ("Transfer-Encoding", "chunked"),
+    ("Content-Type", "application/json")
+  ]
+  if hasChunkedTransferEncoding headers then
+    IO.println "  ✓ Chunked transfer encoding detected"
+  else
+    IO.println "  ✗ Chunked transfer encoding not detected"
+
 def testHttpStructures : IO Unit := do
   IO.println "\nTest: HTTP data structures"
 
@@ -138,6 +166,7 @@ def main : IO Unit := do
   testFormatHeaders
   testHttpRequestToString
   testGetContentLength
+  testChunkedHelpers
   testHttpStructures
 
   IO.println "\n=================================="
