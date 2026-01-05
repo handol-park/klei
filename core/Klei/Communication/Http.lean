@@ -79,126 +79,177 @@ def parseChunkSize (line : String) : Except HttpError Nat :=
     | some n => .ok n
     | none => .error (.parseError s!"Invalid chunk size: {line}")
 
-partial def readLine (sock : SocketHandle) (acc : String := "") : IO (Except HttpError String) :=
-  do
-    let res ← Socket.recv sock 1
-    match res with
-    | .error e => pure (.error (.socketError e))
-    | .ok bytes =>
-        if bytes.size == 0 then
-          pure (.error (.socketError (.closed "Remote closed connection")))
-        else
-          match String.fromUTF8? bytes with
-          | some char =>
-              if char == "\n" then
-                let final := if acc.endsWith "\r" then acc.dropRight 1 else acc
-                pure (.ok final)
-              else
-                readLine sock (acc ++ char)
-          | none => pure (.error (.parseError "Invalid UTF-8 byte in header"))
+structure HttpReader where
+  sock : SocketHandle
+  buffer : ByteArray
+  pos : Nat
 
-partial def readHeaders (sock : SocketHandle) (acc : List (String × String) := []) :
-    IO (Except HttpError (List (String × String))) :=
-  do
-    let res ← readLine sock
-    match res with
-    | .error e => pure (.error e)
-    | .ok line =>
-        if line.isEmpty then
-          pure (.ok acc.reverse)
-        else
-          match line.splitOn ":" with
-          | key :: valParts =>
-              let val := (String.intercalate ":" valParts).trim
-              readHeaders sock ((key.trim, val) :: acc)
-          | [] => pure (.error (.headerError s!"Invalid header: {line}"))
+def HttpReader.new (sock : SocketHandle) : HttpReader :=
+  { sock, buffer := ByteArray.empty, pos := 0 }
+
+partial def readByte (reader : HttpReader) : IO (Except HttpError (UInt8 × HttpReader)) := do
+  if reader.pos < reader.buffer.size then
+    let b := reader.buffer.get! reader.pos
+    let next := { reader with pos := reader.pos + 1 }
+    return .ok (b, next)
+  match ← Socket.recv reader.sock 4096 with
+  | .error e => return .error (.socketError e)
+  | .ok bytes =>
+      if bytes.size == 0 then
+        return .error (.socketError (.closed "Remote closed connection"))
+      readByte { reader with buffer := bytes, pos := 0 }
+
+partial def readLine (reader : HttpReader) (acc : ByteArray := ByteArray.empty) :
+    IO (Except HttpError (String × HttpReader)) := do
+  let res ← readByte reader
+  match res with
+  | .error e => return .error e
+  | .ok (b, next) =>
+      if b == 10 then
+        let finalBytes :=
+          if acc.size > 0 && acc.get! (acc.size - 1) == 13 then
+            acc.extract 0 (acc.size - 1)
+          else
+            acc
+        match String.fromUTF8? finalBytes with
+        | some line => return .ok (line, next)
+        | none => return .error (.parseError "Invalid UTF-8 byte in header")
+      else
+        readLine next (acc.push b)
+
+partial def readHeaders (reader : HttpReader) (acc : List (String × String) := []) :
+    IO (Except HttpError (List (String × String) × HttpReader)) := do
+  let res ← readLine reader
+  match res with
+  | .error e => return .error e
+  | .ok (line, next) =>
+      if line.isEmpty then
+        return .ok (acc.reverse, next)
+      else
+        match line.splitOn ":" with
+        | key :: valParts =>
+            let val := (String.intercalate ":" valParts).trim
+            readHeaders next ((key.trim, val) :: acc)
+        | [] => return .error (.headerError s!"Invalid header: {line}")
 
 def getContentLength (headers : List (String × String)) : Nat :=
   headers.find? (fun (k, _) => k.toLower == "content-length")
     |>.bind (fun (_, v) => v.toNat?)
     |>.getD 0
 
-partial def readExact (sock : SocketHandle) (remaining : Nat) (acc : ByteArray := ByteArray.empty) :
-    IO (Except HttpError ByteArray) := do
+partial def readExact (reader : HttpReader) (remaining : Nat) (acc : ByteArray := ByteArray.empty) :
+    IO (Except HttpError (ByteArray × HttpReader)) := do
   if remaining == 0 then
-    return .ok acc
-  let chunkSize := min remaining 4096
-  match ← Socket.recv sock (USize.ofNat chunkSize) with
-  | .error e => return .error (.socketError e)
-  | .ok bytes =>
-      if bytes.size == 0 then
-        return .error (.socketError (.closed "Remote closed connection"))
-      else
-        readExact sock (remaining - bytes.size) (acc ++ bytes)
+    return .ok (acc, reader)
+  if reader.pos < reader.buffer.size then
+    let available := reader.buffer.size - reader.pos
+    let take := min remaining available
+    let chunk := reader.buffer.extract reader.pos (reader.pos + take)
+    let next := { reader with pos := reader.pos + take }
+    readExact next (remaining - take) (acc ++ chunk)
+  else
+    let chunkSize := min remaining 4096
+    match ← Socket.recv reader.sock (USize.ofNat chunkSize) with
+    | .error e => return .error (.socketError e)
+    | .ok bytes =>
+        if bytes.size == 0 then
+          return .error (.socketError (.closed "Remote closed connection"))
+        let take := min remaining bytes.size
+        let chunk := bytes.extract 0 take
+        let next := { reader with buffer := bytes, pos := take }
+        readExact next (remaining - take) (acc ++ chunk)
 
-def readBody (sock : SocketHandle) (contentLength : Nat) : IO (Except HttpError String) := do
+def readBody (reader : HttpReader) (contentLength : Nat) :
+    IO (Except HttpError (String × HttpReader)) := do
   if contentLength == 0 then
-    return .ok ""
+    return .ok ("", reader)
   if contentLength > USize.size then
     return .error (.parseError "Content-Length exceeds platform limits")
-  match ← readExact sock contentLength with
+  match ← readExact reader contentLength with
   | .error e => return .error e
-  | .ok bytes =>
+  | .ok (bytes, next) =>
       match String.fromUTF8? bytes with
-      | some body => return .ok body
+      | some body => return .ok (body, next)
       | none => return .error (.parseError "Invalid UTF-8 body")
 
-partial def readChunkedBody (sock : SocketHandle) (acc : ByteArray := ByteArray.empty) :
-    IO (Except HttpError String) := do
-  let line ← match ← readLine sock with
-    | .error e => return .error e
-    | .ok l => pure l
-  let size ← match parseChunkSize line with
-    | .error e => return .error e
-    | .ok n => pure n
-  if size == 0 then
-    match ← readHeaders sock with
-    | .error e => return .error e
-    | .ok _ =>
-        match String.fromUTF8? acc with
-        | some body => return .ok body
-        | none => return .error (.parseError "Invalid UTF-8 body")
-  else
-    let bytes ← match ← readExact sock size with
-      | .error e => return .error e
-      | .ok b => pure b
-    let lineAfter ← match ← readLine sock with
-      | .error e => return .error e
-      | .ok l => pure l
-    if lineAfter != "" then
-      return .error (.parseError s!"Expected CRLF after chunk, got: {lineAfter}")
-    readChunkedBody sock (acc ++ bytes)
+partial def sendAll (sock : SocketHandle) (data : ByteArray) (offset : Nat := 0) :
+    IO (Except HttpError Unit) := do
+  if offset >= data.size then
+    return .ok ()
+  let remaining := data.extract offset data.size
+  match ← Socket.send sock remaining with
+  | .error e => return .error (.socketError e)
+  | .ok sent =>
+      if sent.toNat == 0 then
+        return .error (.socketError (.send "Socket returned 0 bytes sent"))
+      sendAll sock data (offset + sent.toNat)
+
+partial def readChunkedBody (reader : HttpReader) (acc : ByteArray := ByteArray.empty) :
+    IO (Except HttpError (String × HttpReader)) := do
+  let res ← readLine reader
+  match res with
+  | .error e => return .error e
+  | .ok (line, next) =>
+      let size ← match parseChunkSize line with
+        | .error e => return .error e
+        | .ok n => pure n
+      if size == 0 then
+        match ← readHeaders next with
+        | .error e => return .error e
+        | .ok (_, after) =>
+            match String.fromUTF8? acc with
+            | some body => return .ok (body, after)
+            | none => return .error (.parseError "Invalid UTF-8 body")
+      else
+        let bytesAndReader ← match ← readExact next size with
+          | .error e => return .error e
+          | .ok result => pure result
+        let bytes := bytesAndReader.fst
+        let afterBytes := bytesAndReader.snd
+        let lineAfterRes ← readLine afterBytes
+        match lineAfterRes with
+        | .error e => return .error e
+        | .ok (lineAfter, afterLine) =>
+            if lineAfter != "" then
+              return .error (.parseError s!"Expected CRLF after chunk, got: {lineAfter}")
+            readChunkedBody afterLine (acc ++ bytes)
 
 def sendRequest (sock : SocketHandle) (req : HttpRequest) : IO (Except HttpError HttpResponse) := do
   -- Send the request
-  match ← Socket.send sock req.toString.toUTF8 with
-  | .error e => return .error (.socketError e)
+  match ← sendAll sock req.toString.toUTF8 with
+  | .error e => return .error e
   | .ok _ => pure ()
 
   -- Read and parse status line
-  let line ← match ← readLine sock with
+  let reader := HttpReader.new sock
+  let lineAndReader ← match ← readLine reader with
     | .error e => return .error e
-    | .ok l => pure l
+    | .ok result => pure result
+  let line := lineAndReader.fst
+  let reader := lineAndReader.snd
 
   let (code, text) ← match parseStatusLine line with
     | .error e => return .error e
     | .ok result => pure result
 
   -- Read headers
-  let headers ← match ← readHeaders sock with
+  let headersAndReader ← match ← readHeaders reader with
     | .error e => return .error e
-    | .ok h => pure h
+    | .ok result => pure result
+  let headers := headersAndReader.fst
+  let reader := headersAndReader.snd
 
   -- Read body
-  let body ← match hasChunkedTransferEncoding headers with
+  let bodyAndReader ← match hasChunkedTransferEncoding headers with
     | true =>
-        match ← readChunkedBody sock with
+        match ← readChunkedBody reader with
         | .error e => return .error e
-        | .ok b => pure b
+        | .ok result => pure result
     | false =>
-        match ← readBody sock (getContentLength headers) with
+        match ← readBody reader (getContentLength headers) with
         | .error e => return .error e
-        | .ok b => pure b
+        | .ok result => pure result
+  let body := bodyAndReader.fst
 
   return .ok { status := code, statusText := text, headers, body }
 

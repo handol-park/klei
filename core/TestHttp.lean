@@ -4,6 +4,17 @@
 import Klei.Communication.Http
 
 open Klei.Communication.Http
+open Klei.Communication.Socket
+
+partial def connectWithRetry (path : String) (attempts : Nat) :
+    IO (Except SocketError SocketHandle) := do
+  if attempts == 0 then
+    return .error (.connect s!"Timed out connecting to {path}")
+  match ← connect path with
+  | .ok sock => return .ok sock
+  | .error _ =>
+      IO.sleep (UInt32.ofNat 50)
+      connectWithRetry path (attempts - 1)
 
 def testParseStatusLine : IO Unit := do
   IO.println "Test: parseStatusLine"
@@ -136,6 +147,60 @@ def testChunkedHelpers : IO Unit := do
   else
     IO.println "  ✗ Chunked transfer encoding not detected"
 
+def testChunkedIntegration : IO Unit := do
+  IO.println "\nTest: chunked integration (UDS)"
+
+  try
+    let runFlag ← IO.getEnv "KLEI_RUN_UDS_TESTS"
+    if runFlag != some "1" then
+      IO.println "  - Skipped (set KLEI_RUN_UDS_TESTS=1 to run)"
+      return
+
+    let sockPathOpt ← IO.getEnv "KLEI_UDS_SOCKET"
+    let sockPath := sockPathOpt.getD ""
+    if sockPath.isEmpty then
+      IO.println "  - Skipped (set KLEI_UDS_SOCKET=/path/to/socket)"
+      return
+
+    let reqPath := (← IO.getEnv "KLEI_UDS_PATH").getD "/"
+    let expectedBodyOpt ← IO.getEnv "KLEI_UDS_EXPECT_BODY"
+
+    IO.println s!"  • Connecting to {sockPath}"
+    let sock ← match ← connectWithRetry sockPath 20 with
+      | .ok s => pure s
+      | .error e =>
+        IO.println s!"  ✗ Failed to connect to {sockPath}: {e}"
+        return
+
+    IO.println s!"  • Sending request to {reqPath}"
+    let req : HttpRequest := {
+      method := "GET"
+      path := reqPath
+      headers := [("Host", "localhost"), ("Content-Length", "0"), ("Connection", "close")]
+      body := ""
+    }
+
+    IO.println "  • Waiting for response"
+    let res ← sendRequest sock req
+    close sock
+    IO.println "  • Received response"
+
+    match res with
+    | .error e => IO.println s!"  ✗ HTTP request failed: {repr e}"
+    | .ok response =>
+        if response.status != 200 then
+          IO.println s!"  ✗ Expected status 200, got {response.status}"
+        else
+          match expectedBodyOpt with
+          | none => IO.println "  ✓ HTTP response received"
+          | some expected =>
+              if response.body.trim == expected.trim then
+                IO.println "  ✓ HTTP response body matches"
+              else
+                IO.println s!"  ✗ Body mismatch: {repr response.body}"
+  catch e =>
+    IO.println s!"  ✗ Unexpected exception: {e}"
+
 def testHttpStructures : IO Unit := do
   IO.println "\nTest: HTTP data structures"
 
@@ -167,6 +232,7 @@ def main : IO Unit := do
   testHttpRequestToString
   testGetContentLength
   testChunkedHelpers
+  testChunkedIntegration
   testHttpStructures
 
   IO.println "\n=================================="
@@ -175,3 +241,4 @@ def main : IO Unit := do
   IO.println "To test the complete stack:"
   IO.println "  1. Start a test HTTP server on a Unix socket"
   IO.println "  2. Use the HTTP client to connect and make requests"
+  IO.println "  3. Set KLEI_RUN_UDS_TESTS=1 and KLEI_UDS_SOCKET=/path/to/socket"

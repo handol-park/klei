@@ -74,7 +74,6 @@ int64_t klei_socket_send_impl(klei_socket_t* sock, const uint8_t* data, size_t l
                  "send() failed: %s", strerror(errno));
         return KLEI_ERR_SEND;
     }
-
     return sent;
 }
 
@@ -133,7 +132,6 @@ void klei_socket_close_impl(klei_socket_t* sock) {
         close(sock->fd);
         sock->fd = -1;
     }
-    free(sock);
 }
 
 // Get last error message

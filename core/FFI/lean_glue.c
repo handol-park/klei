@@ -6,6 +6,7 @@
 #include "socket.h"
 #include <string.h>
 #include <stdint.h>
+#include <stdio.h>
 
 // External class for SocketHandle
 static lean_external_class* g_socket_class = NULL;
@@ -64,11 +65,10 @@ LEAN_EXPORT lean_obj_res klei_socket_is_null(b_lean_obj_arg sock_obj, lean_obj_a
 
 // Lean FFI wrapper for klei_socket_send
 LEAN_EXPORT lean_obj_res klei_socket_send(b_lean_obj_arg sock_obj, b_lean_obj_arg data_obj,
-                              b_lean_obj_arg len_obj, lean_obj_arg /* IO world */) {
+                              size_t len, lean_obj_arg /* IO world */) {
     klei_socket_t* sock = unwrap_socket(sock_obj);
 
     // Extract byte array data
-    size_t len = lean_unbox_usize(len_obj);
     const uint8_t* data = lean_sarray_cptr(data_obj);
 
     // Call C function
@@ -81,22 +81,16 @@ LEAN_EXPORT lean_obj_res klei_socket_send(b_lean_obj_arg sock_obj, b_lean_obj_ar
 
 // Lean FFI wrapper for klei_socket_recv
 LEAN_EXPORT lean_obj_res klei_socket_recv(b_lean_obj_arg sock_obj, b_lean_obj_arg buffer_obj,
-                              b_lean_obj_arg bufsize_obj, b_lean_obj_arg timeout_obj,
-                              lean_obj_arg /* IO world */) {
+                              size_t bufsize, uint32_t timeout_ms, lean_obj_arg /* IO world */) {
     klei_socket_t* sock = unwrap_socket(sock_obj);
-    size_t bufsize = lean_unbox_usize(bufsize_obj);
-    uint32_t timeout_ms = lean_unbox_uint32(timeout_obj);
-
-    // Allocate buffer for receive
-    lean_obj_res new_buffer = lean_alloc_sarray(1, 0, bufsize);
-    uint8_t* buffer = lean_sarray_cptr(new_buffer);
+    uint8_t* buffer = lean_sarray_cptr(buffer_obj);
 
     // Call C function
     int64_t result = klei_socket_recv_impl(sock, buffer, bufsize, timeout_ms);
 
     // Update the byte array size if we received data
     if (result > 0) {
-        lean_sarray_object* sarray = (lean_sarray_object*)lean_to_sarray(new_buffer);
+        lean_sarray_object* sarray = (lean_sarray_object*)lean_to_sarray(buffer_obj);
         sarray->m_size = result;
     }
 
