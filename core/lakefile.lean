@@ -11,6 +11,9 @@ lean_exe core where
 lean_exe «test-socket» where
   root := `TestSocket
 
+lean_exe «test-http» where
+  root := `TestHttp
+
 extern_lib libklei_socket pkg := do
   -- 1. Configuration common to all files
   let libFile := pkg.staticLibDir / "libklei_socket.a"
