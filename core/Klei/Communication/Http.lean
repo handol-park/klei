@@ -83,20 +83,29 @@ structure HttpReader where
   sock : SocketHandle
   buffer : ByteArray
   pos : Nat
+  debug : Bool
 
-def HttpReader.new (sock : SocketHandle) : HttpReader :=
-  { sock, buffer := ByteArray.empty, pos := 0 }
+def httpDebugEnabled : IO Bool := do
+  let flag ← IO.getEnv "KLEI_HTTP_DEBUG"
+  return flag == some "1"
+
+def HttpReader.new (sock : SocketHandle) (debug : Bool := false) : HttpReader :=
+  { sock, buffer := ByteArray.empty, pos := 0, debug }
 
 partial def readByte (reader : HttpReader) : IO (Except HttpError (UInt8 × HttpReader)) := do
   if reader.pos < reader.buffer.size then
     let b := reader.buffer.get! reader.pos
     let next := { reader with pos := reader.pos + 1 }
     return .ok (b, next)
+  if reader.debug then
+    IO.println "HttpReader: refill buffer"
   match ← Socket.recv reader.sock 4096 with
   | .error e => return .error (.socketError e)
   | .ok bytes =>
       if bytes.size == 0 then
         return .error (.socketError (.closed "Remote closed connection"))
+      if reader.debug then
+        IO.println s!"HttpReader: received {bytes.size} bytes"
       readByte { reader with buffer := bytes, pos := 0 }
 
 partial def readLine (reader : HttpReader) (acc : ByteArray := ByteArray.empty) :
@@ -149,11 +158,15 @@ partial def readExact (reader : HttpReader) (remaining : Nat) (acc : ByteArray :
     readExact next (remaining - take) (acc ++ chunk)
   else
     let chunkSize := min remaining 4096
+    if reader.debug then
+      IO.println s!"HttpReader: readExact recv {chunkSize} bytes"
     match ← Socket.recv reader.sock (USize.ofNat chunkSize) with
     | .error e => return .error (.socketError e)
     | .ok bytes =>
         if bytes.size == 0 then
           return .error (.socketError (.closed "Remote closed connection"))
+        if reader.debug then
+          IO.println s!"HttpReader: readExact received {bytes.size} bytes"
         let take := min remaining bytes.size
         let chunk := bytes.extract 0 take
         let next := { reader with buffer := bytes, pos := take }
@@ -221,7 +234,8 @@ def sendRequest (sock : SocketHandle) (req : HttpRequest) : IO (Except HttpError
   | .ok _ => pure ()
 
   -- Read and parse status line
-  let reader := HttpReader.new sock
+  let debug ← httpDebugEnabled
+  let reader := HttpReader.new sock debug
   let lineAndReader ← match ← readLine reader with
     | .error e => return .error e
     | .ok result => pure result
